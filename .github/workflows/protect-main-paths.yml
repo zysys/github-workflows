@@ -1,0 +1,79 @@
+name: protect-main-paths
+
+on:
+  workflow_call:
+    inputs:
+      allowed_paths:
+        description: "Newline- or comma-separated path globs allowed in PRs targeting the base branch (e.g. .omp-build/**, .github/workflows/**)"
+        required: true
+        type: string
+      upstream_repo:
+        description: "Upstream owner/repo whose clean sync merges are allowed onto main ('auto' uses github.event.repository.parent.full_name on forks; 'none' disables)"
+        required: false
+        type: string
+        default: "auto"
+      upstream_branch:
+        description: "Upstream branch name for sync detection (defaults to parent default_branch or 'main')"
+        required: false
+        type: string
+        default: ""
+      remediation:
+        description: "Custom markdown instructions displayed in the blocking job summary and PR comment"
+        required: false
+        type: string
+        default: ""
+      post_comment:
+        description: "Post or update a sticky PR comment when a pull request is blocked"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Protect main carry paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out pull request repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          path: repo
+          persist-credentials: false
+
+      - name: Check out zysys/github-workflows guard
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: zysys/github-workflows
+          ref: main
+          path: guard
+          persist-credentials: false
+
+      - name: Verify pull request touches only allowed paths
+        env:
+          REPO_PATH: ${{ github.workspace }}/repo
+          ALLOWED_PATHS: ${{ inputs.allowed_paths }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.base_ref || 'main' }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref || github.head_ref || 'HEAD' }}
+          UPSTREAM_REPO: ${{ inputs.upstream_repo }}
+          UPSTREAM_BRANCH: ${{ inputs.upstream_branch }}
+          REMEDIATION: ${{ inputs.remediation }}
+          POST_COMMENT: ${{ inputs.post_comment && 'true' || 'false' }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA:-}" ] && ! git -C "$REPO_PATH" cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git -C "$REPO_PATH" fetch --quiet --no-tags origin "$BASE_SHA"
+          fi
+          if [ -n "${HEAD_SHA:-}" ] && ! git -C "$REPO_PATH" cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            git -C "$REPO_PATH" fetch --quiet --no-tags origin "$HEAD_SHA"
+          fi
+          python3 "$GITHUB_WORKSPACE/guard/scripts/protect_main_paths.py"
