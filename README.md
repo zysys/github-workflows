@@ -54,3 +54,44 @@ jobs:
 | `upstream_branch` | No       | `""`     | Upstream branch name for sync detection (defaults to the fork parent's default branch or `"main"`).                                                                                          |
 | `remediation`     | No       | `""`     | Custom Markdown instructions shown under **How to fix** when a PR is blocked.                                                                                                                |
 | `post_comment`    | No       | `true`   | Post or update a single sticky comment (`<!-- zysys:protect-main-paths -->`) on blocked PRs.                                                                                                 |
+
+## `go-release.yml`
+
+Tests a Go module, cross-compiles it for `darwin-arm64`, `linux-x64` and `linux-arm64`, and publishes a GitHub release marked `--latest`. Assets are `<binary>-<target>.tar.gz` (the binary at the archive root) plus `SHA256SUMS`, so `mise use -g github:<owner>/<repo>` installs it. Builds use `CGO_ENABLED=0`, `-trimpath`, and set `main.version` to the release tag (a missing `main.version` is ignored by the linker).
+
+### Usage
+
+Create `.github/workflows/release.yml` in the caller repository:
+
+```yaml
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    uses: zysys/github-workflows/.github/workflows/go-release.yml@main
+    permissions:
+      contents: write
+```
+
+Then in mise config:
+
+```toml
+"github:<owner>/<repo>" = { version = "latest", minimum_release_age = "0" }
+```
+
+### Inputs
+
+| Input             | Required | Default   | Description                                       |
+| ----------------- | -------- | --------- | ------------------------------------------------- |
+| `binary`          | No       | repo name | Binary name and asset prefix.                     |
+| `package`         | No       | `.`       | Go package to build (e.g. `./cmd/tool`).          |
+| `go_version_file` | No       | `go.mod`  | File `setup-go` reads the toolchain version from. |
+| `run_tests`       | No       | `true`    | Run `go test ./...` before building.              |

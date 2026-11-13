@@ -1,0 +1,91 @@
+name: go-release
+
+# Reusable: test a Go module, cross-compile it, and publish a GitHub release
+# that `mise use -g github:<owner>/<repo>` can install.
+#
+# Assets are named `<binary>-<target>.tar.gz` (darwin-arm64, linux-x64,
+# linux-arm64) plus SHA256SUMS, and the release is marked --latest, so
+# mise's `version = "latest"` resolves it.
+
+on:
+  workflow_call:
+    inputs:
+      binary:
+        description: Binary name. Defaults to the repository name.
+        type: string
+        default: ""
+      package:
+        description: Go package to build, relative to the repository root.
+        type: string
+        default: "."
+      go_version_file:
+        description: File setup-go reads the toolchain version from.
+        type: string
+        default: go.mod
+      run_tests:
+        description: Run `go test ./...` before building.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: go-release-${{ github.repository }}-${{ github.sha }}
+      cancel-in-progress: false
+    env:
+      INPUT_BINARY: ${{ inputs.binary }}
+      INPUT_PACKAGE: ${{ inputs.package }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ inputs.go_version_file }}
+
+      - name: Test
+        if: ${{ inputs.run_tests }}
+        run: go test ./...
+
+      - name: Build
+        id: build
+        run: |
+          set -euo pipefail
+          bin="${INPUT_BINARY:-${GITHUB_REPOSITORY#*/}}"
+          tag="build-$(date -u +%Y%m%d%H%M%S)-$(git rev-parse --short HEAD)"
+          mkdir -p assets
+          for target in darwin-arm64 linux-x64 linux-arm64; do
+            case "$target" in
+              darwin-arm64) goos=darwin goarch=arm64 ;;
+              linux-x64) goos=linux goarch=amd64 ;;
+              linux-arm64) goos=linux goarch=arm64 ;;
+            esac
+            work="$(mktemp -d)"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -trimpath -ldflags "-s -w -X main.version=$tag" \
+              -o "$work/$bin" "$INPUT_PACKAGE"
+            tar -C "$work" -czf "assets/$bin-$target.tar.gz" "$bin"
+            rm -rf "$work"
+          done
+          (cd assets && sha256sum "$bin"-*.tar.gz > SHA256SUMS)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # gh ships on the runner and --latest is what mise reads for
+      # `version = "latest"`: no third-party release action to pin or trust.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --title "$TAG" --latest --target "$GITHUB_SHA" assets/*
