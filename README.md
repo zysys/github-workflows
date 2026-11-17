@@ -95,3 +95,55 @@ Then in mise config:
 | `package`         | No       | `.`       | Go package to build (e.g. `./cmd/tool`).          |
 | `go_version_file` | No       | `go.mod`  | File `setup-go` reads the toolchain version from. |
 | `run_tests`       | No       | `true`    | Run `go test ./...` before building.              |
+
+## `rust-release.yml`
+
+Builds a Rust binary on one native runner per target and publishes a GitHub release marked `--latest` (or `--prerelease`). Assets are `<binary>-<target>.tar.gz` (the binary at the archive root) plus `SHA256SUMS`, so `mise use -g github:<owner>/<repo>` installs it.
+
+Rust does not cross-compile the way Go does, so each target gets its own OS runner: `macos-latest` for `darwin-arm64`, `ubuntu-22.04` for `linux-x64`, `ubuntu-22.04-arm` for `linux-arm64`. A caller that only needs some targets passes its own `targets` array; `darwin-arm64` plus `linux-x64` is what a Mac-plus-Linux fleet needs.
+
+Every build runs the binary's `--version` before it is packed, so a binary that cannot start on its own runner never becomes a release asset.
+
+### Usage
+
+Assemble in the caller repository, then hand the build and publish to this workflow (this is what `zachbornheimer/mise` does):
+
+```yaml
+jobs:
+  assemble:
+    # ...merge the carried branches, push the assembly, and compute a tag...
+    outputs:
+      tag: ${{ steps.decide.outputs.tag }}
+      build-sha: ${{ steps.decide.outputs.build-sha }}
+  release:
+    needs: [assemble]
+    if: needs.assemble.outputs.skip != 'true'
+    permissions:
+      contents: write
+    uses: zysys/github-workflows/.github/workflows/rust-release.yml@main
+    with:
+      binary: mise
+      ref: mise-build
+      tag: ${{ needs.assemble.outputs.tag }}
+      release_target: ${{ needs.assemble.outputs.build-sha }}
+      targets: |
+        [{"target":"darwin-arm64","os":"macos-latest"},
+         {"target":"linux-x64","os":"ubuntu-22.04"}]
+      build_env: |
+        MACOSX_DEPLOYMENT_TARGET=12.0
+```
+
+### Inputs
+
+| Input             | Required | Default                              | Description                                                   |
+| ----------------- | -------- | ------------------------------------ | ------------------------------------------------------------- |
+| `binary`          | Yes      | -                                    | Cargo binary (`--bin <binary>`) and asset prefix.             |
+| `tag`             | Yes      | -                                    | Release tag to publish.                                       |
+| `targets`         | No       | darwin-arm64, linux-x64, linux-arm64 | JSON array of `{"target", "os"}`; each builds on that runner. |
+| `ref`             | No       | caller's commit                      | Ref the builds check out.                                     |
+| `release_target`  | No       | caller's commit                      | Commit the release points at.                                 |
+| `notes`           | No       | generated line                       | Release body; callers put machine-readable lines here.        |
+| `prerelease`      | No       | `false`                              | Publish as a prerelease (mise ignores prereleases).           |
+| `cargo_args`      | No       | -                                    | Extra arguments after `cargo build --release --bin <binary>`. |
+| `build_env`       | No       | -                                    | Newline-separated `KEY=VALUE` lines exported for every build. |
+| `timeout_minutes` | No       | `120`                                | Per-target build timeout.                                     |
