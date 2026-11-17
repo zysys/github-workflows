@@ -99,8 +99,14 @@ jobs:
           while IFS= read -r line; do
             [ -n "$line" ] && export "${line?}"
           done <<< "${INPUT_BUILD_ENV:-}"
-          read -r -a extra <<< "${INPUT_CARGO_ARGS:-}"
-          rustup run stable cargo build --release --bin "$INPUT_BINARY" "${extra[@]}"
+          # macOS runners run bash 3.2: an array that `read -a` never fills is
+          # unset, and `"${extra[@]}"` aborts under `set -u`. Declare it, then
+          # expand it only when it has elements.
+          extra=()
+          if [ -n "${INPUT_CARGO_ARGS:-}" ]; then
+            read -r -a extra <<< "$INPUT_CARGO_ARGS"
+          fi
+          rustup run stable cargo build --release --bin "$INPUT_BINARY" ${extra[@]+"${extra[@]}"}
 
       - name: Check the binary runs
         env:

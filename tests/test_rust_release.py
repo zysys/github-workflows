@@ -93,6 +93,25 @@ class RustReleaseTest(unittest.TestCase):
         self.assertIn('target="${RELEASE_TARGET:-$REF}"', body)
         self.assertIn('--target "$target"', body)
 
+    def test_optional_cargo_args_never_trip_an_unset_array(self) -> None:
+        """macOS runners run bash 3.2, where an unfilled `read -a` array is
+        unset and `"${extra[@]}"` aborts under `set -u`.
+
+        A Linux runner's bash 5 does not abort, so this failure only appears on
+        the macOS job: the declaration plus the guarded expansion are the guard.
+        """
+        build = self.workflow["jobs"]["build"]
+        # Comments may quote the trap to explain it; only code is asserted.
+        code = "\n".join(
+            line
+            for line in step_text(build).splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        self.assertIn("extra=()", code)
+        # Every occurrence must be the guarded `+` form, never a bare expansion.
+        self.assertNotRegex(code, r'(?<!\+)"\$\{extra\[@\]\}"')
+        self.assertIn('${extra[@]+"${extra[@]}"}', code)
+
 
 if __name__ == "__main__":
     unittest.main()
