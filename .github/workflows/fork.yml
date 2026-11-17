@@ -25,6 +25,10 @@ on:
         description: Executable name. Assets are `<binary>-<target>.tar.gz` with the binary at the archive root.
         type: string
         required: true
+      scripts_ref:
+        description: Ref of zysys/github-workflows whose scripts this run uses. Pass the same ref as the `uses:` pin.
+        type: string
+        default: main
       mirror:
         description: The fork's branch that mirrors upstream's default branch (fast-forwarded, never committed to).
         type: string
@@ -112,8 +116,8 @@ jobs:
       - name: Check out fork scripts
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
+          repository: zysys/github-workflows
+          ref: ${{ inputs.scripts_ref }}
           path: .zysys
           persist-credentials: false
       - name: Clone the fork
@@ -123,6 +127,7 @@ jobs:
           path: work
           fetch-depth: 0
           filter: blob:none
+          persist-credentials: false
       - name: Merge main and the listed branches
         id: plan
         env:
@@ -206,8 +211,8 @@ jobs:
       - name: Check out fork scripts
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
+          repository: zysys/github-workflows
+          ref: ${{ inputs.scripts_ref }}
           path: .zysys
           persist-credentials: false
       - name: Clone the fork
@@ -217,6 +222,7 @@ jobs:
           path: work
           fetch-depth: 0
           filter: blob:none
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: fork-plan
@@ -368,7 +374,7 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP"
           mise install --yes "$TOOL"
-          BIN="$(mise exec "$TOOL" -- sh -c 'command -v "$0"' "$BINARY")"
+          BIN="$(mise which --tool "$TOOL" "$BINARY")"
           export BIN
           echo "installed $BIN"
           bash -euo pipefail -c "$INPUT_SMOKE"
@@ -386,4 +392,15 @@ jobs:
     steps:
       # GitHub never marks a prerelease latest and mise skips prereleases, so clearing the
       # flag in the same call is what releases the build to machines.
-      - run: gh release edit "$TAG" --prerelease=false --latest
+      - name: Promote
+        run: gh release edit "$TAG" --prerelease=false --latest
+      - name: Delete superseded candidates
+        run: |
+          set -euo pipefail
+          # Older prereleases are candidates that failed verify or were overtaken; this one
+          # now ships, so they can never be promoted.
+          gh release list --limit 100 --json tagName,isPrerelease \
+            --jq '.[] | select(.isPrerelease) | .tagName' |
+            while IFS= read -r stale; do
+              [ "$stale" = "$TAG" ] || gh release delete "$stale" --yes --cleanup-tag
+            done
