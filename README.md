@@ -104,7 +104,7 @@ Builds and ships a customized fork of someone else's CLI, in any language, so `m
 - The default branch `fork` holds only this caller, `.fork/branches` (the topic branches to carry, in merge order) and `.fork/rr-cache` (recorded conflict resolutions, replayed with `git rerere`).
 - Each customization is a topic branch cut from the mirror, so it is also a clean upstream pull request.
 
-A run fast-forwards the mirror, merges the mirror plus every listed branch (`scripts/fork.py assemble`, deterministic), runs `check` on that merged tree, builds each target, publishes a **prerelease**, installs that exact tag with `mise` on each target and runs `smoke`, then promotes it to latest. A conflict, a red check or a failed install stops the run before machines see anything: `mise` never installs a prerelease as `latest`. A run whose merge equals the latest release's `build_commit:` is skipped unless `force` is set.
+A run fast-forwards the mirror, merges the mirror plus every listed branch (`scripts/fork.py assemble`, deterministic), then runs `check` on that merged tree beside each target build, publishes a **prerelease**, installs that exact tag with `mise` on each target and runs `smoke`, then promotes it to latest. A conflict, a red check or a failed install stops the run before machines see anything: `mise` never installs a prerelease as `latest`. A run whose merge equals the latest release's `build_commit:` is skipped unless `force` is set.
 
 The local `fork` tool (`~/.omp/agent/tools/fork`) writes the caller, lands topic branches, records conflict resolutions and fast-forwards every mirror daily.
 
@@ -146,22 +146,22 @@ jobs:
 
 ### Inputs
 
-| Input             | Required | Default                   | Description                                                                         |
-| ----------------- | -------- | ------------------------- | ----------------------------------------------------------------------------------- |
-| `binary`          | Yes      | -                         | Executable name; assets are `<binary>-<target>.tar.gz`.                             |
-| `scripts_ref`     | Yes      | -                         | Commit of this repository whose `scripts/fork.py` the run uses; equals the `uses:`. |
-| `check`           | Yes      | -                         | Gate on the merged tree before any build; `true` only when there is nothing to run. |
-| `build`           | Yes      | -                         | Command that builds the binary at the root of the merged tree.                      |
-| `artifact`        | Yes      | -                         | Path of the built binary, relative to the merged tree.                              |
-| `mirror`          | No       | `main`                    | The fork's branch that mirrors upstream's default branch.                           |
-| `smoke`           | No       | `"$BIN" --version`        | Run against the built and then the installed binary; `$BIN` is its path.            |
-| `tools`           | No       | -                         | Space-separated `mise` tool specs installed before check and build.                 |
-| `targets`         | No       | darwin-arm64, linux-x64   | JSON array of `{"target", "os"}`; each builds on that runner.                       |
-| `build_env`       | No       | -                         | Newline-separated `KEY=VALUE` lines exported for check and build.                   |
-| `cache_path`      | No       | -                         | Extra build output cached across runs.                                              |
-| `cache_key_paths` | No       | -                         | Space-separated paths whose tree hashes key `cache_path`.                           |
-| `publish`         | No       | `true`                    | Release, verify and promote; pass `false` for pull requests.                        |
-| `force`           | No       | `false`                   | Build even when the latest release already ships this merge.                        |
+| Input             | Required | Default                 | Description                                                                         |
+| ----------------- | -------- | ----------------------- | ----------------------------------------------------------------------------------- |
+| `binary`          | Yes      | -                       | Executable name; assets are `<binary>-<target>.tar.gz`.                             |
+| `scripts_ref`     | Yes      | -                       | Commit of this repository whose `scripts/fork.py` the run uses; equals the `uses:`. |
+| `check`           | Yes      | -                       | Gate on the merged tree before any build; `true` only when there is nothing to run. |
+| `build`           | Yes      | -                       | Command that builds the binary at the root of the merged tree.                      |
+| `artifact`        | Yes      | -                       | Path of the built binary, relative to the merged tree.                              |
+| `mirror`          | No       | `main`                  | The fork's branch that mirrors upstream's default branch.                           |
+| `smoke`           | No       | `"$BIN" --version`      | Run against the built and then the installed binary; `$BIN` is its path.            |
+| `tools`           | No       | -                       | Space-separated `mise` tool specs installed before check and build.                 |
+| `targets`         | No       | darwin-arm64, linux-x64 | JSON array of `{"target", "os"}`; each builds on that runner.                       |
+| `build_env`       | No       | -                       | Newline-separated `KEY=VALUE` lines exported for check and build.                   |
+| `cache_path`      | No       | -                       | Extra build output cached across runs.                                              |
+| `cache_key_paths` | No       | -                       | Space-separated paths whose tree hashes key `cache_path`.                           |
+| `publish`         | No       | `true`                  | Release, verify and promote; pass `false` for pull requests.                        |
+| `force`           | No       | `false`                 | Build even when the latest release already ships this merge.                        |
 
 ## `rust-release.yml`
 
