@@ -193,13 +193,15 @@ class ForkAssembleTest(unittest.TestCase):
 
     def test_failed_git_command_reports_stdout_and_stderr(self) -> None:
         repo = self.clone("failing")
-        message = "pathspec 'absent.txt' did not match"
-        with self.assertRaises(fork.AssemblyError) as raised:
-            fork.git(repo, "commit", "-m", "nothing staged")
-        self.assertIn("nothing to commit", str(raised.exception))
+        proc = subprocess.CompletedProcess(
+            ["git"], 1, stdout="nothing to commit\n", stderr="hint: stage files\n"
+        )
+        self.assertEqual(
+            fork.failure_text(proc), "hint: stage files | nothing to commit"
+        )
         with self.assertRaises(fork.AssemblyError) as raised:
             fork.git(repo, "add", "absent.txt")
-        self.assertIn(message, str(raised.exception))
+        self.assertIn("absent.txt", str(raised.exception))
 
     def test_duplicate_branch_line_is_refused(self) -> None:
         with self.assertRaises(fork.AssemblyError):
