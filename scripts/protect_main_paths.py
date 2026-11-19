@@ -382,14 +382,12 @@ def render_markdown_report(
         lines.extend(
             [
                 f"1. **Keep feature/fix code on its own topic branch** (`{slug}`), never in a PR directly targeting `{result.base_ref}`.",
-                f"2. If this repository assembles topic branches via `.omp-build/branches/`, push `{slug}` to the fork and open a PR to `{result.base_ref}` that **only** adds `.omp-build/branches/{slug}.toml`:",
+                f"2. On a managed fork, do not register the topic by hand. Run `fork change` and `fork land` (skill `shipping-a-fork-binary-via-mise`). That appends `{slug}` to `.fork/branches` on the default branch `fork` and leaves `{result.base_ref}` a fast-forward-only mirror.",
                 "   ```bash",
-                "   git fetch origin main",
-                f"   wt switch --create chore/register-{slug.replace('/', '-')} --base origin/{result.base_ref}",
-                f"   # create .omp-build/branches/{slug}.toml",
-                "   wt step commit",
-                f"   gh pr create --base {result.base_ref} --fill",
+                f"   bun ~/.omp/agent/tools/fork/cli.ts change <repo> {slug}",
+                f"   bun ~/.omp/agent/tools/fork/cli.ts land <repo> {slug}",
                 "   ```",
+                "   Machines install the promoted release only with `mise install` or `mise up`.",
             ]
         )
     return "\n".join(lines) + "\n"
