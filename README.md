@@ -35,21 +35,20 @@ jobs:
       pull-requests: write
     with:
       allowed_paths: |
-        .omp-build/**
-        .github/workflows/omp-build.yml
-        .github/workflows/protect-main.yml
+        .github/workflows/fork.yml
+        .fork/**
       upstream_repo: can1357/oh-my-pi
       upstream_branch: main
       remediation: |
-        `main` on `zachbornheimer/oh-my-pi` only holds upstream `can1357/oh-my-pi:main` plus `.omp-build/` and `.github/workflows/{omp-build,protect-main}.yml`.
-        Keep feature or fix commits on a topic branch off `origin/main` (`wt switch --create feat/<slug> --base origin/main`), push it to `origin`, and open a PR to `main` that only adds `.omp-build/branches/feat/<slug>.toml`.
+        The upstream-named branch is a fast-forward-only mirror. Fork configuration lives on the default branch `fork` (`.github/workflows/fork.yml`, `.fork/branches`, `.fork/rr-cache`).
+        Put a customization on a topic branch cut from the mirror, then register it with `fork land`. Machines install the promoted release only with `mise install` or `mise up`. The how-to is the skill `shipping-a-fork-binary-via-mise`.
 ```
 
 ### Inputs
 
 | Input             | Required | Default  | Description                                                                                                                                                                                  |
 | ----------------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `allowed_paths`   | **Yes**  | —        | Newline- or comma-separated path globs allowed on the target branch (e.g. `.omp-build/**`, `.github/workflows/**`).                                                                          |
+| `allowed_paths`   | **Yes**  | —        | Newline- or comma-separated path globs allowed on the target branch (e.g. `.github/workflows/fork.yml`, `.fork/**`).                                                                         |
 | `upstream_repo`   | No       | `"auto"` | Upstream `owner/repo` whose clean sync merges are allowed onto `main`. `"auto"` reads `github.event.repository.parent.full_name` on GitHub forks; `"none"` disables upstream sync exemption. |
 | `upstream_branch` | No       | `""`     | Upstream branch name for sync detection (defaults to the fork parent's default branch or `"main"`).                                                                                          |
 | `remediation`     | No       | `""`     | Custom Markdown instructions shown under **How to fix** when a PR is blocked.                                                                                                                |
@@ -173,26 +172,17 @@ Every build runs the binary's `--version` before it is packed, so a binary that 
 
 ### Usage
 
-Assemble in the caller repository, then hand the build and publish to this workflow (this is what `zachbornheimer/mise` does):
+A customized fork does not assemble its own tree or name its own build branch. It calls `fork.yml` (above), which merges the mirror plus `.fork/branches`, builds, and publishes. `rust-release.yml` is for a repository that already has the commit to build. A managed fork never calls it with a fork-owned assembly ref.
 
 ```yaml
 jobs:
-  assemble:
-    # ...merge the carried branches, push the assembly, and compute a tag...
-    outputs:
-      tag: ${{ steps.decide.outputs.tag }}
-      build-sha: ${{ steps.decide.outputs.build-sha }}
   release:
-    needs: [assemble]
-    if: needs.assemble.outputs.skip != 'true'
     permissions:
       contents: write
     uses: zysys/github-workflows/.github/workflows/rust-release.yml@main
     with:
-      binary: mise
-      ref: mise-build
-      tag: ${{ needs.assemble.outputs.tag }}
-      release_target: ${{ needs.assemble.outputs.build-sha }}
+      binary: tool
+      tag: v1.2.3
       targets: |
         [{"target":"darwin-arm64","os":"macos-latest"},
          {"target":"linux-x64","os":"ubuntu-22.04"}]

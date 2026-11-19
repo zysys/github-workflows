@@ -52,25 +52,25 @@ class ProtectMainPathsTest(unittest.TestCase):
         patterns = parse_allowed_patterns(
             """
             # comment
-            ./.omp-build/
-            .github/workflows/omp-build.yml, .github/workflows/protect-main.yml
+            ./.fork/
+            .github/workflows/fork.yml, .github/workflows/protect-main.yml
             docs/**/*.md
             """
         )
         self.assertEqual(
             patterns,
             [
-                ".omp-build/**",
-                ".github/workflows/omp-build.yml",
+                ".fork/**",
+                ".github/workflows/fork.yml",
                 ".github/workflows/protect-main.yml",
                 "docs/**/*.md",
             ],
         )
         self.assertTrue(
-            path_matches_any(".omp-build/branches/feat/memory.toml", patterns)
+            path_matches_any(".fork/branches", patterns)
         )
-        self.assertTrue(path_matches_any(".omp-build/resolve-branches.ts", patterns))
-        self.assertTrue(path_matches_any(".github/workflows/omp-build.yml", patterns))
+        self.assertTrue(path_matches_any(".fork/rr-cache/entry", patterns))
+        self.assertTrue(path_matches_any(".github/workflows/fork.yml", patterns))
         self.assertTrue(path_matches_any("docs/guide.md", patterns))
         self.assertTrue(path_matches_any("docs/nested/guide.md", patterns))
         self.assertFalse(
@@ -86,29 +86,29 @@ class ProtectMainPathsTest(unittest.TestCase):
                 repo,
                 {
                     "packages/app.ts": "export const v = 1;\n",
-                    ".omp-build/README.md": "carry\n",
+                    ".fork/README.md": "carry\n",
                 },
                 "chore: initial base",
             )
             _git(repo, "checkout", "-b", "chore/register-archive")
             head_sha = _write_commit(
                 repo,
-                {".omp-build/branches/feat/archive.toml": 'reason = "archive"\n'},
-                "ci(omp-build): register feat/archive",
+                {".fork/branches": "fix/archive\n"},
+                "ci(fork): register feat/archive",
             )
 
             res = evaluate_repo(
                 str(repo),
                 base_sha=base_sha,
                 head_sha=head_sha,
-                allowed_patterns=[".omp-build/**", ".github/workflows/**"],
+                allowed_patterns=[".fork/**", ".github/workflows/**"],
                 base_ref="main",
                 head_ref="chore/register-archive",
             )
             self.assertTrue(res.ok)
             self.assertEqual(res.violations, [])
             self.assertEqual(
-                res.allowed_files, [".omp-build/branches/feat/archive.toml"]
+                res.allowed_files, [".fork/branches"]
             )
             md = render_markdown_report(res, repository="zachbornheimer/oh-my-pi")
             self.assertIn(COMMENT_MARKER, md)
@@ -128,7 +128,7 @@ class ProtectMainPathsTest(unittest.TestCase):
                 repo,
                 {
                     "packages/app.ts": "export const v = 2;\n",
-                    ".omp-build/branches/feat/direct.toml": 'reason = "ok"\n',
+                    ".fork/branches": "fix/direct\n",
                 },
                 "feat: edit app directly on main PR",
             )
@@ -137,7 +137,7 @@ class ProtectMainPathsTest(unittest.TestCase):
                 str(repo),
                 base_sha=base_sha,
                 head_sha=head_sha,
-                allowed_patterns=[".omp-build/**"],
+                allowed_patterns=[".fork/**"],
                 base_ref="main",
                 head_ref="feat/direct-to-main",
             )
@@ -148,11 +148,11 @@ class ProtectMainPathsTest(unittest.TestCase):
             md = render_markdown_report(
                 res,
                 repository="zachbornheimer/oh-my-pi",
-                remediation="Register a topic branch under `.omp-build/branches/` instead.",
+                remediation="Register the topic with `fork land` instead.",
             )
             self.assertIn("Pull request blocked", md)
             self.assertIn("`packages/app.ts`", md)
-            self.assertIn("Register a topic branch under `.omp-build/branches/`", md)
+            self.assertIn("Register the topic with `fork land`", md)
 
     def test_clean_upstream_sync_merge_passes_while_dirty_merge_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -166,8 +166,8 @@ class ProtectMainPathsTest(unittest.TestCase):
             _git(repo, "checkout", "-b", "main", u1)
             fork_base = _write_commit(
                 repo,
-                {".omp-build/branches/assembled.toml": "layer = 10\n"},
-                "ci(omp-build): carry manifest",
+                {".fork/branches": "fix/assembled\n"},
+                "ci(fork): carry manifest",
             )
             _git(repo, "checkout", "upstream-main")
             u2 = _write_commit(
@@ -197,7 +197,7 @@ class ProtectMainPathsTest(unittest.TestCase):
                 str(repo),
                 base_sha=fork_base,
                 head_sha=clean_sync_head,
-                allowed_patterns=[".omp-build/**", ".github/workflows/**"],
+                allowed_patterns=[".fork/**", ".github/workflows/**"],
                 upstream_sha=u2,
                 upstream_repo="can1357/oh-my-pi",
                 upstream_branch="main",
@@ -233,7 +233,7 @@ class ProtectMainPathsTest(unittest.TestCase):
                 str(repo),
                 base_sha=fork_base,
                 head_sha=bad_merge_head,
-                allowed_patterns=[".omp-build/**"],
+                allowed_patterns=[".fork/**"],
                 upstream_sha=u2,
                 upstream_repo="can1357/oh-my-pi",
                 upstream_branch="main",
@@ -281,7 +281,7 @@ class ProtectMainPathsTest(unittest.TestCase):
                         "--repo",
                         str(repo),
                         "--allowed-paths",
-                        ".omp-build/**",
+                        ".fork/**",
                         "--base-sha",
                         base_sha,
                         "--head-sha",

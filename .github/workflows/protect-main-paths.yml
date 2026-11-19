@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       allowed_paths:
-        description: "Newline- or comma-separated path globs allowed in PRs targeting the base branch (e.g. .omp-build/**, .github/workflows/**)"
+        description: "Newline- or comma-separated path globs allowed in PRs targeting the base branch (e.g. .github/workflows/fork.yml, .fork/**)"
         required: true
         type: string
       upstream_repo:
