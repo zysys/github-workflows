@@ -7,9 +7,10 @@ name: fork
 # ordered list of topic branches to carry (`.fork/branches`) and the recorded conflict
 # resolutions (`.fork/rr-cache`). Every run:
 #
-#   plan     merge main + each listed branch (rerere replays recorded resolutions),
-#            then run the fork's `check` command on that merged tree. A conflict or
-#            a red check stops here: nothing is built, the fleet keeps its release.
+#   plan     merge main + each listed branch (rerere replays recorded resolutions)
+#            and record the merge. A conflict stops here: nothing is built.
+#   check    re-create that merge and run the fork's `check` command. It starts
+#            beside the builds; a red check publishes nothing.
 #   build    re-create the identical merge on each target runner, build, run
 #            `smoke` against the built binary, tar it.
 #   release  publish a PRERELEASE (mise never installs prereleases as `latest`).
@@ -133,7 +134,7 @@ jobs:
           esac
 
   plan:
-    name: Merge and check
+    name: Merge
     needs: sync
     # A failed fast-forward is not a reason to stop: build the mirror as it is.
     if: ${{ !cancelled() }}
@@ -205,14 +206,63 @@ jobs:
           name: fork-plan
           path: plan.json
           if-no-files-found: error
+
+  check:
+    name: Check the merged tree
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out fork config
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          path: config
+          persist-credentials: false
+      - name: Check out fork scripts
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: zysys/github-workflows
+          ref: ${{ inputs.scripts_ref }}
+          path: .zysys
+          persist-credentials: false
+      - name: Clone the fork
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.mirror }}
+          path: work
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fork-plan
+      - name: Re-create the planned merge
+        env:
+          HEAD_SHA: ${{ needs.plan.outputs.head }}
+        run: |
+          set -euo pipefail
+          python3 "$FORK_SCRIPT" assemble --repo work --fetch --plan plan.json --rr-cache config/.fork/rr-cache --out rebuilt.json > /dev/null
+          got="$(git -C work rev-parse HEAD)"
+          if [ "$got" != "$HEAD_SHA" ]; then
+            echo "::error title=Merge differs::this runner merged $got, the plan merged $HEAD_SHA"
+            exit 1
+          fi
+      - name: Restore Rust build cache
+        if: hashFiles('work/Cargo.lock') != ''
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: work
+          key: check
       - name: Install tools
-        if: steps.plan.outputs.skip != 'true' && inputs.tools != ''
+        if: inputs.tools != ''
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           install: false
           cache: false
       - name: Check the merged tree
-        if: steps.plan.outputs.skip != 'true'
         working-directory: work
         env:
           INPUT_CHECK: ${{ inputs.check }}
@@ -351,7 +401,7 @@ jobs:
 
   release:
     name: Publish prerelease
-    needs: [plan, build]
+    needs: [plan, check, build]
     if: inputs.publish && needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-22.04
     permissions:
