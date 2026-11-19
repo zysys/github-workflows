@@ -64,9 +64,16 @@ def git(
     )
     if check and proc.returncode != 0:
         raise AssemblyError(
-            f"git {' '.join(args)} failed ({proc.returncode}): {proc.stderr.strip()}"
+            f"git {' '.join(args)} failed ({proc.returncode}): {failure_text(proc)}"
         )
     return proc
+
+
+def failure_text(proc: subprocess.CompletedProcess[str]) -> str:
+    """Why a git command failed. `git commit` and `git merge` explain themselves on stdout."""
+    return " | ".join(
+        stream.strip() for stream in (proc.stderr, proc.stdout) if stream.strip()
+    )
 
 
 def out(repo: Path, *args: str) -> str:

@@ -191,6 +191,18 @@ class ForkAssembleTest(unittest.TestCase):
         )
         self.assertEqual(code, fork.EXIT_USAGE)
 
+    def test_failed_git_command_reports_stdout_and_stderr(self) -> None:
+        repo = self.clone("failing")
+        proc = subprocess.CompletedProcess(
+            ["git"], 1, stdout="nothing to commit\n", stderr="hint: stage files\n"
+        )
+        self.assertEqual(
+            fork.failure_text(proc), "hint: stage files | nothing to commit"
+        )
+        with self.assertRaises(fork.AssemblyError) as raised:
+            fork.git(repo, "add", "absent.txt")
+        self.assertIn("absent.txt", str(raised.exception))
+
     def test_duplicate_branch_line_is_refused(self) -> None:
         with self.assertRaises(fork.AssemblyError):
             fork.read_branch_list(self.branches_file("feat/a", "feat/a"))
