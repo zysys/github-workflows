@@ -248,6 +248,15 @@ def assemble(repo: Path, plan: dict, *, keep_conflict: bool) -> dict:
                     "Resolve it once with `fork resolve`; the resolution is recorded in .fork/rr-cache "
                     "and replayed on every later build.",
                 }
+            if (
+                git(
+                    repo, "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False
+                ).returncode
+                != 0
+            ):
+                raise AssemblyError(
+                    f"merging {name} failed ({proc.returncode}) before any conflict: {failure_text(proc)}"
+                )
             # rerere resolved and staged every conflict: finish the merge deterministically.
             git(repo, "commit", "--no-verify", "-m", message, env=env)
         result_branches.append({**entry, "state": "merged"})

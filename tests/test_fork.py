@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -163,6 +165,32 @@ class ForkAssembleTest(unittest.TestCase):
         self.assertEqual(code, 0, result)
         merged = git(self.tmp / "replay", "show", f"{result['head']}:app.txt")
         self.assertEqual(merged, "line one\nline two (b and c)\nline three")
+
+    def test_merge_refused_without_a_conflict_is_reported_not_committed(self) -> None:
+        git(self.seed, "switch", "-q", "-c", "feat/clash")
+        commit(self.seed, {"clash.txt": "from the branch\n"}, "add clash")
+        git(self.seed, "switch", "-q", "main")
+        git(self.seed, "push", "-q", str(self.origin), "feat/clash")
+        repo = self.clone("refused")
+        (repo / "clash.txt").write_text("untracked local file\n", encoding="utf-8")
+        out = self.tmp / "result-refused.json"
+        argv = [
+            "assemble",
+            "--repo",
+            str(repo),
+            "--fetch",
+            "--branches",
+            str(self.branches_file("feat/clash")),
+            "--out",
+            str(out),
+        ]
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = fork.main(argv)
+        self.assertEqual(code, fork.EXIT_USAGE)
+        self.assertIn("feat/clash", stderr.getvalue())
+        self.assertIn("clash.txt", stderr.getvalue())
+        self.assertNotIn("git commit", stderr.getvalue())
 
     def test_branch_upstream_already_merged_is_flagged(self) -> None:
         git(self.seed, "merge", "-q", "--ff-only", "feat/a")
