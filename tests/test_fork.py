@@ -8,8 +8,9 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from scripts import fork
+from scripts import fork, quarantine
 
 ENV = {
     **os.environ,
@@ -234,6 +235,68 @@ class ForkAssembleTest(unittest.TestCase):
     def test_duplicate_branch_line_is_refused(self) -> None:
         with self.assertRaises(fork.AssemblyError):
             fork.read_branch_list(self.branches_file("feat/a", "feat/a"))
+
+
+class QuarantineTest(ForkAssembleTest):
+    def test_cutoff_and_fast_forward(self) -> None:
+        repo = self.clone("age")
+        base = git(repo, "rev-parse", "HEAD")
+        stamp = int(git(repo, "show", "-s", "--format=%ct", base))
+        graph = quarantine.upstream_graph(repo, [base])
+        self.assertEqual(quarantine.eligible_commit(repo, base, graph, stamp), base)
+        with self.assertRaises(quarantine.AssemblyError):
+            quarantine.eligible_commit(repo, base, graph, stamp - 1)
+        self.assertEqual(quarantine.sync_action(repo, base, base), "none")
+        self.assertEqual(
+            quarantine.sync_action(repo, base, "origin/feat/a"), "fast_forward"
+        )
+        self.assertEqual(quarantine.sync_action(repo, "origin/feat/a", base), "none")
+        with self.assertRaises(quarantine.AssemblyError):
+            quarantine.sync_action(repo, "origin/feat/a", "origin/feat/b")
+
+    def test_carry_cannot_import_quarantined_upstream(self) -> None:
+        repo = self.clone("carry-age")
+        base = git(repo, "rev-parse", "HEAD")
+        topic = git(repo, "rev-parse", "origin/feat/a")
+        graph = quarantine.upstream_graph(repo, [topic])
+        graph[topic] = graph[base] + 1
+        with self.assertRaises(quarantine.AssemblyError):
+            quarantine.validate_upstream(
+                repo, {"base": base, "branches": [{"sha": topic}]}, graph, graph[base]
+            )
+
+    def test_safe_base_assembles_without_rewinding_newer_mirror(self) -> None:
+        repo = self.clone("safe-base")
+        base = git(repo, "rev-parse", "HEAD")
+        newer = git(repo, "rev-parse", "origin/feat/a")
+        git(repo, "update-ref", "refs/remotes/origin/main", newer)
+        plan = fork.resolve_plan(repo, "main", ["feat/b"])
+        graph = quarantine.upstream_graph(repo, [newer])
+        cutoff = graph[base]
+        graph[newer] = cutoff + 1
+        with (
+            patch.object(quarantine, "observe_upstream", return_value=(newer, graph)),
+            patch.object(
+                quarantine.time, "time", return_value=cutoff + quarantine.GRACE_SECONDS
+            ),
+        ):
+            safe = quarantine.assembly_plan(
+                repo, plan, "example/upstream", pinned=False
+            )
+        self.assertEqual(safe["base"], base)
+        result = fork.assemble(repo, safe, keep_conflict=False)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([b["name"] for b in result["branches"]], ["feat/b"])
+        self.assertEqual(git(repo, "rev-parse", "origin/main"), newer)
+        # A backdated descendant cannot erase a recent ancestor's grace period.
+        self.assertEqual(quarantine.eligible_commit(repo, newer, graph, cutoff), base)
+
+    def test_sync_failure_cannot_run_plan(self) -> None:
+        workflow = (
+            Path(__file__).parents[1] / ".github/workflows/fork.yml"
+        ).read_text()
+        plan = workflow.split("  plan:", 1)[1].split("  check:", 1)[0]
+        self.assertNotIn("!cancelled()", plan)
 
 
 if __name__ == "__main__":

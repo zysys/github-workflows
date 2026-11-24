@@ -138,6 +138,14 @@ def fetch(repo: Path, base_branch: str, branches: list[str]) -> None:
     git(repo, "fetch", "--quiet", "--no-tags", "origin", *refspecs)
 
 
+def quarantine_policy():
+    if __package__:
+        from . import quarantine
+    else:
+        import quarantine
+    return quarantine
+
+
 def resolve_plan(repo: Path, base_branch: str, branches: list[str]) -> dict:
     proc = git(
         repo,
@@ -288,6 +296,10 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         if args.fetch:
             fetch(repo, args.base_branch, names)
         plan = resolve_plan(repo, args.base_branch, names)
+    if args.upstream:
+        plan = quarantine_policy().assembly_plan(
+            repo, plan, args.upstream, pinned=bool(args.plan)
+        )
     result = assemble(repo, plan, keep_conflict=args.keep_conflict)
     text = json.dumps(result, indent=2)
     if args.out:
@@ -307,11 +319,23 @@ def cmd_record(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sync(args: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            quarantine_policy().sync(Path(args.repo), args.github_repo, args.mirror)
+        )
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
     a = sub.add_parser("assemble", help="merge main + listed branches")
     a.add_argument("--repo", required=True)
+    a.add_argument(
+        "--upstream", help="upstream owner/repo: enforce 72-hour ancestry grace"
+    )
     a.add_argument("--branches", help=".fork/branches file (ignored with --plan)")
     a.add_argument(
         "--base-branch",
@@ -340,10 +364,15 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--repo", required=True)
     r.add_argument("--rr-cache", required=True)
     r.set_defaults(func=cmd_record)
+    s = sub.add_parser("sync", help="fast-forward only to quarantined upstream")
+    s.add_argument("--repo", required=True)
+    s.add_argument("--github-repo", required=True)
+    s.add_argument("--mirror", required=True)
+    s.set_defaults(func=cmd_sync)
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except AssemblyError as exc:
+    except (AssemblyError, quarantine_policy().AssemblyError) as exc:
         print(f"::error title=fork assemble::{exc}", file=sys.stderr)
         return EXIT_USAGE
 

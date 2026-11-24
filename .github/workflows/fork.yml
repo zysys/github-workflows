@@ -107,37 +107,30 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Fast-forward the mirror to upstream
+      - name: Check out fork scripts
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: zysys/github-workflows
+          ref: ${{ inputs.scripts_ref }}
+          path: .zysys
+          persist-credentials: false
+      - name: Clone mirror without running its code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.mirror }}
+          path: work
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fast-forward only to eligible upstream
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           MIRROR: ${{ inputs.mirror }}
-        run: |
-          set -uo pipefail
-          parent="$(gh api "repos/$GH_REPO" --jq '.parent.full_name // empty')"
-          [ -n "$parent" ] || { echo "::warning title=No upstream::$GH_REPO has no upstream parent; building $MIRROR as it is"; exit 0; }
-          upstream_branch="$(gh api "repos/$parent" --jq .default_branch)"
-          state="$(gh api "repos/$parent/compare/$upstream_branch...${GH_REPO%%/*}:${GH_REPO##*/}:$MIRROR" --jq .status)"
-          case "$state" in
-            identical) echo "$MIRROR already matches $parent:$upstream_branch" ;;
-            behind)
-              # GITHUB_TOKEN cannot push upstream commits that touch .github/workflows; the
-              # local daily `fork sync` (a user token) covers that case, so this is best effort.
-              if gh repo sync "$GH_REPO" --branch "$MIRROR" --source "$parent"; then
-                echo "fast-forwarded $MIRROR to $parent:$upstream_branch"
-              else
-                echo "::warning title=Mirror not fast-forwarded::building $MIRROR as it is; run \`fork sync\` locally"
-              fi ;;
-            *)
-              # The mirror carries commits upstream lacks. Never force it: report and build what is there.
-              echo "::warning title=Mirror diverged::$MIRROR is $state relative to $parent:$upstream_branch; it must only ever fast-forward. Move its extra commits to a topic branch." ;;
-          esac
+        run: python3 "$FORK_SCRIPT" sync --repo work --github-repo "$GH_REPO" --mirror "$MIRROR"
 
   plan:
     name: Merge
     needs: sync
-    # A failed fast-forward is not a reason to stop: build the mirror as it is.
-    if: ${{ !cancelled() }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     permissions:
@@ -178,8 +171,10 @@ jobs:
           set -euo pipefail
           branches=config/.fork/branches
           [ -f "$branches" ] || : > "$branches"
+          upstream="$(gh api "repos/$GH_REPO" --jq '.parent.full_name // empty')"
+          [ -n "$upstream" ] || { echo "::error::No upstream: refusing unverified assembly"; exit 1; }
           python3 "$FORK_SCRIPT" assemble --repo work --fetch --base-branch "$MIRROR" --branches "$branches" \
-            --rr-cache config/.fork/rr-cache --out plan.json
+            --rr-cache config/.fork/rr-cache --upstream "$upstream" --out plan.json
           base="$(jq -r .base plan.json)"
           head="$(jq -r .head plan.json)"
           tag="build-$(date -u +%Y%m%d%H%M%S)-${base:0:7}-${head:0:7}"

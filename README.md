@@ -1,3 +1,24 @@
+## Fork upstream quarantine
+
+The reusable `fork.yml` and local `fork sync` use `scripts/fork.py sync` and its
+shared quarantine policy. Upstream commits wait 72 hours, measured from the
+maximum committer timestamp across their complete ancestry. Sync only
+fast-forwards to the newest eligible first-parent commit; it never resets an
+already-ahead mirror. Diverged mirrors and failed syncs stop the workflow.
+
+Assembly selects the eligible upstream base independently of an already-ahead
+mirror, without moving that mirror. Every carried branch is checked against
+all fetched upstream branch ancestry: importing quarantined upstream commits
+fails before merge/build and reports when they become eligible. Rebase those
+carries onto the eligible base rather than bypassing the gate. `force` bypasses
+only the already-built check, never quarantine. Own published fork releases
+remain immediately installable (`minimum_release_age=0`): delaying our release
+again is not an upstream quarantine.
+
+This is a commit-timestamp grace period, not a release-publication-age policy
+or protection against forged/backdated timestamps, rewritten or unpublished
+upstream history, or copied upstream code with different commit identities.
+
 # `zysys/github-workflows`
 
 Reusable GitHub Actions workflows shared across `zysys` and personal forks.
