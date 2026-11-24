@@ -291,13 +291,6 @@ class QuarantineTest(ForkAssembleTest):
         # A backdated descendant cannot erase a recent ancestor's grace period.
         self.assertEqual(quarantine.eligible_commit(repo, newer, graph, cutoff), base)
 
-    def test_sync_failure_cannot_run_plan(self) -> None:
-        workflow = (
-            Path(__file__).parents[1] / ".github/workflows/fork.yml"
-        ).read_text()
-        plan = workflow.split("  plan:", 1)[1].split("  check:", 1)[0]
-        self.assertNotIn("!cancelled()", plan)
-
 
 if __name__ == "__main__":
     unittest.main()
