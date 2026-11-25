@@ -1,6 +1,6 @@
 ## Fork upstream quarantine
 
-The reusable `fork.yml` and local `fork sync` use `scripts/fork.py sync` and its
+The reusable `fork.yml`, `fork-sync.yml` and local `fork sync` use
 shared quarantine policy. Upstream commits wait 72 hours, measured from the
 maximum committer timestamp across their complete ancestry. Sync only
 fast-forwards to the newest eligible first-parent commit; it never resets an
@@ -183,6 +183,48 @@ jobs:
 | `cache_key_paths` | No       | -                       | Space-separated paths whose tree hashes key `cache_path`.                           |
 | `publish`         | No       | `true`                  | Release, verify and promote; pass `false` for pull requests.                        |
 | `force`           | No       | `false`                 | Build even when the latest release already ships this merge.                        |
+
+## `fork-sync.yml`
+
+Keeps a contribution-only fork's mirror an exact, fast-forward-only copy of upstream. It builds and releases nothing; use `fork.yml` for a fork that ships a customized binary. It runs the same `scripts/fork.py sync` and 72-hour quarantine as `fork.yml`, with the fork's own `github.token`, so no stored secret is needed.
+
+A schedule only runs from the default branch, and a workflow file on the mirror would be a fork commit. So the fork's default branch is `fork`, holding only this caller; the upstream-named branch stays pristine.
+
+### Usage
+
+`.github/workflows/fork-sync.yml` on the fork's `fork` branch; `uses:` and `scripts_ref` name the same commit:
+
+```yaml
+name: fork-sync
+
+on:
+  schedule:
+    - cron: "17 6,18 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: fork-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    uses: zysys/github-workflows/.github/workflows/fork-sync.yml@<sha> # v2.1.0
+    permissions:
+      contents: write
+    with:
+      scripts_ref: <sha>
+      mirror: main
+```
+
+### Inputs
+
+| Input         | Required | Default | Description                                                                         |
+| ------------- | -------- | ------- | ----------------------------------------------------------------------------------- |
+| `scripts_ref` | Yes      | -       | Commit of this repository whose `scripts/fork.py` the run uses; equals the `uses:`. |
+| `mirror`      | No       | `main`  | The fork's branch that mirrors upstream's default branch.                           |
 
 ## `rust-release.yml`
 

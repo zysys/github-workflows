@@ -1,0 +1,60 @@
+name: fork-sync
+
+# Reusable: keep a contribution-only fork's mirror branch an exact, fast-forward-only
+# copy of upstream. It builds and releases nothing. Use fork.yml for a fork that ships
+# a customized binary; use this for a fork that only carries upstream pull requests.
+#
+# The calling fork keeps its mirror (`main`/`master`) pristine and puts this caller on a
+# separate default branch (`fork`), because a schedule only runs from the default branch
+# and a workflow file on the mirror would be a fork commit. The one write step uses the
+# fork's own `github.token`, so no stored secret is needed. The upstream-ancestry
+# quarantine is the same code fork.yml runs (`scripts/fork.py sync`).
+
+on:
+  workflow_call:
+    inputs:
+      scripts_ref:
+        description: >-
+          Commit of zysys/github-workflows whose scripts this run uses: the same SHA as the `uses:` pin,
+          so the quarantine rules never drift from the workflow that calls them.
+        type: string
+        required: true
+      mirror:
+        description: The fork's branch that mirrors upstream's default branch (fast-forwarded, never committed to).
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+env:
+  FORK_SCRIPT: .zysys/scripts/fork.py
+
+jobs:
+  sync:
+    name: Fast-forward the mirror
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out fork scripts
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: zysys/github-workflows
+          ref: ${{ inputs.scripts_ref }}
+          path: .zysys
+          persist-credentials: false
+      - name: Clone mirror without running its code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.mirror }}
+          path: work
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fast-forward only to eligible upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MIRROR: ${{ inputs.mirror }}
+        run: python3 "$FORK_SCRIPT" sync --repo work --github-repo "$GH_REPO" --mirror "$MIRROR"
